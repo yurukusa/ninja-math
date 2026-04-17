@@ -7,7 +7,7 @@
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 html, body { width:100%; height:100%; overflow:hidden; background:#1a1a2e; touch-action:none; user-select:none; }
-canvas { display:block; position:absolute; top:0; left:0; }
+canvas { display:block; position:absolute; top:0; left:0; image-rendering:pixelated; image-rendering:crisp-edges; }
 #ui-overlay {
   position:absolute; top:0; left:0; width:100%; height:100%;
   pointer-events:none; display:flex; flex-direction:column; align-items:center; justify-content:center;
@@ -124,7 +124,83 @@ function hitRect(px, py, x, y, w, h) { return px >= x && px <= x + w && py >= y 
 function shuffleArray(arr) { for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; } return arr; }
 
 // ============================================================
-// 2. Audio (Web Audio API)
+// 1.5. Sprite & Asset Loading
+// ============================================================
+const SPRITES = {};
+const SFX_AUDIO = {};
+let assetsLoaded = false;
+
+function loadSprite(name, src) {
+  const img = new Image();
+  img.src = src;
+  SPRITES[name] = img;
+  return img;
+}
+
+// Preload all sprites
+loadSprite('ninja-idle', 'assets/sprites/ninja-idle.png');
+loadSprite('ninja-attack', 'assets/sprites/ninja-attack.png');
+loadSprite('ninja-throw', 'assets/sprites/ninja-throw.png');
+loadSprite('ninja-dead', 'assets/sprites/ninja-dead.png');
+loadSprite('ninja-run', 'assets/sprites/ninja-run.png');
+loadSprite('enemy-idle', 'assets/sprites/enemy-idle.png');
+loadSprite('enemy-attack', 'assets/sprites/enemy-attack.png');
+loadSprite('enemy-dead', 'assets/sprites/enemy-dead.png');
+loadSprite('kunai', 'assets/sprites/kunai.png');
+loadSprite('slash-effect', 'assets/sprites/slash-effect.png');
+
+// Preload SFX audio files
+function loadSfx(name, src) {
+  const audio = new Audio(src);
+  audio.preload = 'auto';
+  SFX_AUDIO[name] = audio;
+}
+loadSfx('slash', 'assets/sfx/slash.wav');
+loadSfx('shuriken', 'assets/sfx/shuriken.wav');
+loadSfx('hit', 'assets/sfx/hit.wav');
+loadSfx('impact', 'assets/sfx/impact.wav');
+loadSfx('button', 'assets/sfx/button.wav');
+loadSfx('victory', 'assets/sfx/victory.wav');
+loadSfx('chest-open', 'assets/sfx/chest-open.wav');
+loadSfx('wrong', 'assets/sfx/wrong.wav');
+
+// BGM
+let bgmTitle = null, bgmBattle = null, currentBgm = null;
+function initBgm() {
+  bgmTitle = new Audio('assets/bgm/title.ogg');
+  bgmTitle.loop = true; bgmTitle.volume = 0.3;
+  bgmBattle = new Audio('assets/bgm/battle.ogg');
+  bgmBattle.loop = true; bgmBattle.volume = 0.25;
+}
+function playBgm(which) {
+  if (currentBgm) { currentBgm.pause(); currentBgm.currentTime = 0; }
+  if (!soundEnabled) return;
+  currentBgm = which === 'title' ? bgmTitle : bgmBattle;
+  if (currentBgm) currentBgm.play().catch(() => {});
+}
+function stopBgm() {
+  if (currentBgm) { currentBgm.pause(); currentBgm.currentTime = 0; currentBgm = null; }
+}
+
+function playSfx(name) {
+  if (!soundEnabled) return;
+  const a = SFX_AUDIO[name];
+  if (a) { a.currentTime = 0; a.play().catch(() => {}); }
+}
+
+// Spritesheet animation helper
+function drawSpriteFrame(spriteName, frameIndex, totalFrames, x, y, drawW, drawH) {
+  const img = SPRITES[spriteName];
+  if (!img || !img.complete || !img.naturalWidth) return false;
+  const fw = img.naturalWidth / totalFrames;
+  const fh = img.naturalHeight;
+  const sx = frameIndex * fw;
+  ctx.drawImage(img, sx, 0, fw, fh, x - drawW / 2, y - drawH, drawW, drawH);
+  return true;
+}
+
+// ============================================================
+// 2. Audio (Web Audio API) — fallback for missing audio files
 // ============================================================
 let audioCtx = null;
 let soundEnabled = true;
@@ -144,23 +220,16 @@ function playTone(freq, dur, type = 'sine', vol = 0.3) {
   osc.start(); osc.stop(audioCtx.currentTime + dur);
 }
 
-function sfxSlash() {
-  // 刀の斬撃音: 高周波スイープ
-  playTone(1200, 0.12, 'sawtooth', 0.25);
-  setTimeout(() => playTone(400, 0.15, 'sawtooth', 0.15), 30);
-}
-function sfxShuriken() {
-  // 手裏剣: シュッ
-  playTone(800, 0.08, 'sawtooth', 0.2);
-  setTimeout(() => playTone(200, 0.2, 'sawtooth', 0.1), 50);
-}
-function sfxImpact() { playTone(80, 0.15, 'square', 0.25); playTone(120, 0.2, 'square', 0.15); }
-function sfxWrong() { playTone(150, 0.3, 'square', 0.12); }
+// SE: アセットファイル優先、なければWeb Audio APIフォールバック
+function sfxSlash() { playSfx('slash') || playTone(1200, 0.12, 'sawtooth', 0.25); }
+function sfxShuriken() { playSfx('shuriken') || playTone(800, 0.08, 'sawtooth', 0.2); }
+function sfxImpact() { playSfx('hit') || playTone(80, 0.15, 'square', 0.25); }
+function sfxWrong() { playSfx('wrong') || playTone(150, 0.3, 'square', 0.12); }
 function sfxEnemyLaugh() { [400, 350, 300].forEach((f, i) => setTimeout(() => playTone(f, 0.12, 'triangle', 0.15), i * 100)); }
-function sfxStageClear() { [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => playTone(f, 0.3, 'triangle', 0.25), i * 150)); }
-function sfxChestOpen() { playTone(660, 0.15, 'triangle'); setTimeout(() => playTone(880, 0.25, 'triangle'), 120); }
+function sfxStageClear() { playSfx('victory') || [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => playTone(f, 0.3, 'triangle', 0.25), i * 150)); }
+function sfxChestOpen() { playSfx('chest-open') || playTone(660, 0.15, 'triangle'); }
 function sfxChestMiss() { playTone(200, 0.2, 'square', 0.15); playTone(150, 0.25, 'square', 0.1); }
-function sfxButton() { playTone(440, 0.08, 'triangle', 0.15); }
+function sfxButton() { playSfx('button') || playTone(440, 0.08, 'triangle', 0.15); }
 function sfxBeltUp() { [523, 659, 784, 1047, 1319].forEach((f, i) => setTimeout(() => playTone(f, 0.35, 'triangle', 0.2), i * 120)); }
 
 // ============================================================
@@ -328,195 +397,101 @@ function drawRoundRect(x, y, w, h, r) {
 }
 
 function drawNinja(x, y, size, state, beltColor) {
-  const s = size;
+  const drawH = size * 2.2;
+  const drawW = drawH * 0.55; // aspect ratio of sprite
   const bob = state === 'idle' ? Math.sin(timer * 0.06) * 3 : 0;
-  const attackOffset = state === 'sword' ? Math.min(1, attackProgress) * 30 : 0;
-  const nx = x + attackOffset, ny = y + bob;
+  const ny = y + bob;
 
-  // 足
-  ctx.fillStyle = '#1a1a1a';
-  ctx.fillRect(nx - s * 0.25, ny + s * 0.55, s * 0.18, s * 0.2);
-  ctx.fillRect(nx + s * 0.07, ny + s * 0.55, s * 0.18, s * 0.2);
-
-  // 体
-  ctx.fillStyle = '#2d2d2d';
-  ctx.beginPath();
-  ctx.ellipse(nx, ny + s * 0.2, s * 0.28, s * 0.4, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // 帯
-  ctx.fillStyle = beltColor || '#FFF';
-  ctx.fillRect(nx - s * 0.28, ny + s * 0.15, s * 0.56, s * 0.08);
-  // 帯の結び
-  ctx.beginPath();
-  ctx.arc(nx + s * 0.2, ny + s * 0.19, s * 0.06, 0, Math.PI * 2);
-  ctx.fill();
-
-  // 腕
-  ctx.fillStyle = '#2d2d2d';
+  // スプライトシート版
+  let spriteName, frame, totalFrames = 10;
   if (state === 'sword') {
-    // 右腕を上に振り上げ→斬り下ろし
-    const armAngle = -Math.PI * 0.3 + attackProgress * Math.PI * 0.8;
-    ctx.save();
-    ctx.translate(nx + s * 0.2, ny);
-    ctx.rotate(armAngle);
-    ctx.fillRect(0, -s * 0.06, s * 0.35, s * 0.12);
-    // 刀
-    ctx.fillStyle = '#C0C0C0';
-    ctx.fillRect(s * 0.3, -s * 0.03, s * 0.5, s * 0.06);
-    ctx.fillStyle = '#FFD700'; // 鍔
-    ctx.fillRect(s * 0.27, -s * 0.06, s * 0.06, s * 0.12);
-    ctx.restore();
+    spriteName = 'ninja-attack';
+    frame = Math.min(9, Math.floor(attackProgress * 10));
+    // attack sprites are wider
+    const aw = drawH * 1.1;
+    if (drawSpriteFrame(spriteName, frame, totalFrames, x + 20, ny, aw, drawH)) return;
   } else if (state === 'shuriken') {
-    // 投げポーズ
-    ctx.save();
-    ctx.translate(nx + s * 0.2, ny - s * 0.1);
-    ctx.rotate(-0.5);
-    ctx.fillRect(0, -s * 0.05, s * 0.3, s * 0.1);
-    ctx.restore();
+    spriteName = 'ninja-throw';
+    frame = Math.min(9, Math.floor(attackProgress * 10));
+    const tw = drawH * 0.85;
+    if (drawSpriteFrame(spriteName, frame, totalFrames, x, ny, tw, drawH)) return;
+  } else if (state === 'victory') {
+    spriteName = 'ninja-run';
+    frame = Math.floor(timer * 0.15) % 10;
+    if (drawSpriteFrame(spriteName, frame, totalFrames, x, ny - Math.abs(Math.sin(timer * 0.12)) * 15, drawW, drawH)) {
+      // Victory sparkle
+      ctx.fillStyle = '#FFD700'; ctx.font = 'bold 28px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('✨', x, ny - drawH - 10);
+      return;
+    }
   } else {
-    // 通常: 腕を横に
-    ctx.fillRect(nx - s * 0.42, ny + s * 0.05, s * 0.2, s * 0.1);
-    ctx.fillRect(nx + s * 0.22, ny + s * 0.05, s * 0.2, s * 0.1);
+    spriteName = 'ninja-idle';
+    frame = Math.floor(timer * 0.08) % 10;
+    if (drawSpriteFrame(spriteName, frame, totalFrames, x, ny, drawW, drawH)) return;
   }
 
-  // 頭
+  // フォールバック: Canvas描画（アセット読み込み前）
+  const s = size;
   ctx.fillStyle = '#2d2d2d';
-  ctx.beginPath();
-  ctx.arc(nx, ny - s * 0.25, s * 0.22, 0, Math.PI * 2);
-  ctx.fill();
-
-  // はちまき
+  ctx.beginPath(); ctx.ellipse(x, ny + s * 0.2, s * 0.28, s * 0.4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x, ny - s * 0.25, s * 0.22, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#D32F2F';
-  ctx.fillRect(nx - s * 0.24, ny - s * 0.32, s * 0.48, s * 0.08);
-  // はちまきのしっぽ
-  ctx.beginPath();
-  ctx.moveTo(nx - s * 0.24, ny - s * 0.32);
-  ctx.lineTo(nx - s * 0.4, ny - s * 0.4 + Math.sin(timer * 0.08) * 3);
-  ctx.lineTo(nx - s * 0.24, ny - s * 0.24);
-  ctx.fill();
-
-  // 目
+  ctx.fillRect(x - s * 0.24, ny - s * 0.32, s * 0.48, s * 0.08);
   ctx.fillStyle = '#FFF';
-  ctx.beginPath();
-  ctx.ellipse(nx - s * 0.08, ny - s * 0.27, s * 0.06, s * 0.04, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.ellipse(nx + s * 0.08, ny - s * 0.27, s * 0.06, s * 0.04, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // 瞳
-  ctx.fillStyle = '#111';
-  ctx.beginPath(); ctx.arc(nx - s * 0.06, ny - s * 0.27, s * 0.025, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(nx + s * 0.1, ny - s * 0.27, s * 0.025, 0, Math.PI * 2); ctx.fill();
-
-  // 勝利ポーズ
-  if (state === 'victory') {
-    const jumpY = -Math.abs(Math.sin(timer * 0.15)) * 20;
-    ctx.fillStyle = '#FFD700';
-    ctx.font = 'bold 24px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('✨', nx, ny - s * 0.5 + jumpY);
-  }
+  ctx.beginPath(); ctx.ellipse(x - s * 0.08, ny - s * 0.27, s * 0.06, s * 0.04, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(x + s * 0.08, ny - s * 0.27, s * 0.06, s * 0.04, 0, 0, Math.PI * 2); ctx.fill();
 }
 
 function drawEnemy(x, y, size, state) {
-  const s = size;
+  const drawH = size * 2.4;
+  const drawW = drawH * 0.55;
   const bob = state === 'idle' ? Math.sin(timer * 0.05 + 1) * 2 : 0;
-  const hitOffset = state === 'hit' ? 15 : 0;
+  const hitOffset = state === 'hit' ? 20 : 0;
   const ex = x + hitOffset, ey = y + bob;
 
-  // 足
-  ctx.fillStyle = '#4A148C';
-  ctx.fillRect(ex - s * 0.3, ey + s * 0.6, s * 0.22, s * 0.22);
-  ctx.fillRect(ex + s * 0.08, ey + s * 0.6, s * 0.22, s * 0.22);
-
-  // 体（大きめ）
-  ctx.fillStyle = '#4A148C';
-  ctx.beginPath();
-  ctx.ellipse(ex, ey + s * 0.2, s * 0.38, s * 0.45, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // マント
-  ctx.fillStyle = '#6A1B9A';
-  ctx.beginPath();
-  ctx.moveTo(ex - s * 0.35, ey - s * 0.1);
-  ctx.lineTo(ex - s * 0.5, ey + s * 0.7);
-  ctx.lineTo(ex + s * 0.5, ey + s * 0.7);
-  ctx.lineTo(ex + s * 0.35, ey - s * 0.1);
-  ctx.closePath();
-  ctx.fill();
-
-  // 腕
-  ctx.fillStyle = '#4A148C';
-  if (state === 'laugh') {
-    // 笑い: おなかを押さえる
-    ctx.fillRect(ex - s * 0.15, ey + s * 0.1, s * 0.3, s * 0.1);
+  // スプライトシート版
+  let spriteName, frame, totalFrames = 10;
+  if (state === 'hit') {
+    // 被弾: attack spriteを逆再生風に使う
+    spriteName = 'enemy-idle';
+    frame = Math.floor(timer * 0.2) % 3; // 素早く震える
+    ctx.save();
+    ctx.globalAlpha = 0.7 + Math.sin(timer * 0.5) * 0.3; // 点滅
+    const drawn = drawSpriteFrame(spriteName, frame, totalFrames, ex, ey, drawW, drawH);
+    ctx.restore();
+    if (drawn) {
+      // ヒットエフェクト
+      ctx.fillStyle = '#FF0'; ctx.font = 'bold 36px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('💥', ex, ey - drawH - 5);
+      return;
+    }
+  } else if (state === 'defeated') {
+    spriteName = 'enemy-dead';
+    frame = Math.min(9, Math.floor(timer * 0.05) % 10);
+    if (drawSpriteFrame(spriteName, frame, totalFrames, ex, ey, drawH * 1.0, drawH)) return;
+  } else if (state === 'laugh') {
+    spriteName = 'enemy-attack';
+    frame = Math.floor(timer * 0.1) % 5;
+    const aw = drawH * 1.1;
+    if (drawSpriteFrame(spriteName, frame, totalFrames, ex, ey, aw, drawH)) return;
   } else {
-    // 腕組み
-    ctx.fillRect(ex - s * 0.45, ey + s * 0.05, s * 0.2, s * 0.1);
-    ctx.fillRect(ex + s * 0.25, ey + s * 0.05, s * 0.2, s * 0.1);
+    spriteName = 'enemy-idle';
+    frame = Math.floor(timer * 0.07) % 10;
+    if (drawSpriteFrame(spriteName, frame, totalFrames, ex, ey, drawW, drawH)) return;
   }
 
-  // 頭
+  // フォールバック: Canvas描画
+  const s = size;
   ctx.fillStyle = '#4A148C';
-  ctx.beginPath();
-  ctx.arc(ex, ey - s * 0.25, s * 0.28, 0, Math.PI * 2);
-  ctx.fill();
-
-  // 頭巾の飾り
+  ctx.beginPath(); ctx.ellipse(ex, ey + s * 0.2, s * 0.38, s * 0.45, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(ex, ey - s * 0.25, s * 0.28, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#8E24AA';
   ctx.fillRect(ex - s * 0.3, ey - s * 0.38, s * 0.6, s * 0.1);
-
-  // 目
-  if (state === 'defeated') {
-    // ぐるぐる目
-    ctx.strokeStyle = '#FFF';
-    ctx.lineWidth = 2;
-    for (let side = -1; side <= 1; side += 2) {
-      ctx.beginPath();
-      for (let a = 0; a < Math.PI * 4; a += 0.2) {
-        const r = a * 1.5;
-        const px = ex + side * s * 0.1 + Math.cos(a + timer * 0.1) * r * 0.7;
-        const py = ey - s * 0.27 + Math.sin(a + timer * 0.1) * r * 0.7;
-        a === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
-      }
-      ctx.stroke();
-    }
-  } else if (state === 'laugh') {
-    // 笑い目（線）
-    ctx.strokeStyle = '#FFF'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(ex - s * 0.18, ey - s * 0.28); ctx.lineTo(ex - s * 0.05, ey - s * 0.25); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(ex + s * 0.05, ey - s * 0.28); ctx.lineTo(ex + s * 0.18, ey - s * 0.25); ctx.stroke();
-    // 笑い口
-    ctx.fillStyle = '#FFF';
-    ctx.beginPath();
-    ctx.arc(ex, ey - s * 0.12, s * 0.12, 0, Math.PI);
-    ctx.fill();
-  } else {
-    // 通常: いかつい目
-    ctx.fillStyle = '#FFF';
-    ctx.beginPath(); ctx.ellipse(ex - s * 0.1, ey - s * 0.27, s * 0.08, s * 0.05, -0.2, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(ex + s * 0.1, ey - s * 0.27, s * 0.08, s * 0.05, 0.2, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#F00';
-    ctx.beginPath(); ctx.arc(ex - s * 0.08, ey - s * 0.27, s * 0.03, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(ex + s * 0.12, ey - s * 0.27, s * 0.03, 0, Math.PI * 2); ctx.fill();
-    // ヒゲ
-    ctx.strokeStyle = '#FFF'; ctx.lineWidth = 2;
-    for (let side = -1; side <= 1; side += 2) {
-      for (let j = 0; j < 2; j++) {
-        ctx.beginPath();
-        ctx.moveTo(ex + side * s * 0.1, ey - s * 0.15 + j * s * 0.05);
-        ctx.lineTo(ex + side * s * 0.35, ey - s * 0.18 + j * s * 0.08);
-        ctx.stroke();
-      }
-    }
-  }
-
-  // ヒットエフェクト
+  ctx.fillStyle = '#FFF';
+  ctx.beginPath(); ctx.ellipse(ex - s * 0.1, ey - s * 0.27, s * 0.08, s * 0.05, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(ex + s * 0.1, ey - s * 0.27, s * 0.08, s * 0.05, 0, 0, Math.PI * 2); ctx.fill();
   if (state === 'hit') {
-    ctx.fillStyle = '#FF0';
-    ctx.font = 'bold 36px sans-serif';
-    ctx.textAlign = 'center';
+    ctx.fillStyle = '#FF0'; ctx.font = 'bold 36px sans-serif'; ctx.textAlign = 'center';
     ctx.fillText('💥', ex, ey - s * 0.5);
   }
 }
@@ -796,10 +771,11 @@ function onChest(idx) {
 // 10. Scene: Title
 // ============================================================
 function updateTitle() {
+  if (!bgmTitle) initBgm();
   if (inputTapped) {
     if (hitRect(inputX, inputY, DESIGN_W / 2 - 120, DESIGN_H * 0.6, 240, 60)) {
       sfxButton();
-      // ステージ選択 or 直接ゲームへ
+      stopBgm();
       const nextStage = (saveData.clearedStages.length || 0) + 1;
       startBattle(Math.min(nextStage, STAGES.length));
     } else if (hitRect(inputX, inputY, DESIGN_W / 2 - 120, DESIGN_H * 0.7 + 10, 240, 50)) {
@@ -837,10 +813,10 @@ function drawTitle() {
   ctx.font = 'bold 56px sans-serif';
   ctx.fillText('にんじゃバトル', DESIGN_W / 2, DESIGN_H * 0.35);
 
-  // 忍者キャラ
-  drawNinja(DESIGN_W * 0.3, DESIGN_H * 0.55, 60, 'idle', BELTS[saveData.beltRank].color);
+  // 忍者キャラ（タイトルの下に配置）
+  drawNinja(DESIGN_W * 0.2, DESIGN_H * 0.78, 50, 'idle', BELTS[saveData.beltRank].color);
   // 敵キャラ
-  drawEnemy(DESIGN_W * 0.7, DESIGN_H * 0.55, 60, 'idle');
+  drawEnemy(DESIGN_W * 0.8, DESIGN_H * 0.78, 50, 'idle');
 
   // はじめるボタン
   ctx.fillStyle = '#E91E63';
@@ -870,6 +846,7 @@ function drawTitle() {
 // 11. Battle System
 // ============================================================
 function startBattle(sid) {
+  playBgm('battle');
   stageId = sid;
   currentStage = STAGES[sid - 1] || STAGES[0];
   papaHP = currentStage.hitsNeeded;
