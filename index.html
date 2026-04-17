@@ -149,6 +149,11 @@ loadSprite('enemy-dead', 'assets/sprites/enemy-dead.png');
 loadSprite('kunai', 'assets/sprites/kunai.png');
 loadSprite('slash-effect', 'assets/sprites/slash-effect.png');
 
+// カード画像プリロード
+for (let i = 1; i <= 20; i++) {
+  loadSprite(`card${String(i).padStart(2,'0')}`, `assets/items/card${String(i).padStart(2,'0')}.png`);
+}
+
 // Preload SFX audio files
 function loadSfx(name, src) {
   const audio = new Audio(src);
@@ -756,12 +761,22 @@ function onChest(idx) {
     chestResult.innerHTML = '💨 はずれ！<br><span style="font-size:18px">つぎは あたるかも！</span>';
   } else {
     sfxChestOpen();
-    spawnStars(DESIGN_W / 2, DESIGN_H / 2, 20);
-    // ランダムなカードをゲット
-    const cardIdx = Math.floor(Math.random() * NINJA_CARDS.length);
+    spawnStars(DESIGN_W / 2, DESIGN_H / 2, 30);
+    // 未所持カード優先、全所持ならランダム
+    let cardIdx;
+    const unowned = [];
+    for (let i = 0; i < NINJA_CARDS.length; i++) { if (!saveData.cards.includes(i)) unowned.push(i); }
+    cardIdx = unowned.length > 0 ? unowned[Math.floor(Math.random() * unowned.length)] : Math.floor(Math.random() * NINJA_CARDS.length);
     chestCardName = NINJA_CARDS[cardIdx];
     if (!saveData.cards.includes(cardIdx)) saveData.cards.push(cardIdx);
-    chestResult.innerHTML = `✨ <span style="color:${CARD_COLORS[cardIdx]}">${chestCardName}</span> ゲット！✨`;
+    const cardImgKey = `card${String(cardIdx + 1).padStart(2, '0')}`;
+    const cardImg = SPRITES[cardImgKey];
+    const imgHtml = (cardImg && cardImg.complete) ? `<img src="${cardImg.src}" style="width:64px;height:64px;image-rendering:pixelated;display:block;margin:8px auto;">` : '';
+    chestResult.innerHTML = `<div style="background:${CARD_COLORS[cardIdx]};border:3px solid #FFD700;border-radius:12px;padding:12px 20px;display:inline-block">
+      ${imgHtml}
+      <div style="color:#FFF;font-size:22px;font-weight:bold;margin-top:4px">✨ ${chestCardName} ✨</div>
+      <div style="color:#FFD700;font-size:14px">にんじゃカード ゲット！</div>
+    </div>`;
   }
   chestResult.style.display = 'block';
   phaseTimer = 90;
@@ -1111,34 +1126,54 @@ function drawCollection() {
   ctx.font = 'bold 18px sans-serif';
   ctx.fillText(`おび: ${BELTS[saveData.beltRank].name}`, DESIGN_W / 2, 70);
 
-  // カードグリッド
-  const cols = 5, cardW = 150, cardH = 50, gap = 10;
+  // カードグリッド（画像付き）
+  const cols = 5, cardW = 160, cardH = 80, gap = 8;
   const startX = (DESIGN_W - cols * (cardW + gap)) / 2;
   for (let i = 0; i < NINJA_CARDS.length; i++) {
     const col = i % cols, row = Math.floor(i / cols);
     const x = startX + col * (cardW + gap);
-    const y = 90 + row * (cardH + gap);
+    const y = 85 + row * (cardH + gap);
     const owned = saveData.cards.includes(i);
 
-    ctx.fillStyle = owned ? CARD_COLORS[i] : '#333';
+    // カード背景
+    ctx.fillStyle = owned ? CARD_COLORS[i] : '#222';
     drawRoundRect(x, y, cardW, cardH, 8);
     ctx.fill();
+    // 枠
+    ctx.strokeStyle = owned ? '#FFD700' : '#444';
+    ctx.lineWidth = owned ? 2 : 1;
+    drawRoundRect(x, y, cardW, cardH, 8);
+    ctx.stroke();
 
     if (owned) {
+      // カード画像
+      const cardImgKey = `card${String(i + 1).padStart(2, '0')}`;
+      const cardImg = SPRITES[cardImgKey];
+      if (cardImg && cardImg.complete && cardImg.naturalWidth) {
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(cardImg, x + 4, y + 4, 40, 40);
+        ctx.imageSmoothingEnabled = true;
+      }
+      // カード名
       ctx.fillStyle = '#FFF';
-      ctx.font = 'bold 16px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(NINJA_CARDS[i], x + cardW / 2, y + cardH / 2 + 6);
+      ctx.font = 'bold 13px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(NINJA_CARDS[i], x + 48, y + 28);
+      // ★マーク
+      ctx.fillStyle = '#FFD700';
+      ctx.font = '11px sans-serif';
+      ctx.fillText('★ にんじゃカード', x + 48, y + 44);
     } else {
       ctx.fillStyle = '#555';
-      ctx.font = '16px sans-serif';
+      ctx.font = '20px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('？？？', x + cardW / 2, y + cardH / 2 + 6);
+      ctx.fillText('？', x + cardW / 2, y + cardH / 2 + 8);
     }
   }
+  ctx.textAlign = 'center';
 
   // 帯一覧
-  const beltY = 310;
+  const beltY = 450;
   ctx.fillStyle = '#FFF';
   ctx.font = 'bold 20px sans-serif';
   ctx.textAlign = 'center';
