@@ -565,8 +565,8 @@ let quizData = null;
 let lastQuizType = '';
 
 function generateQuiz(stageId) {
-  // 常に現在のステージレベルに合った難易度を出す（復習で簡単な問題は出さない）
-  const effectiveStage = stageId;
+  // 5%の確率で復習問題（少し前のレベル）
+  const effectiveStage = (stageId > 10 && Math.random() < 0.05) ? Math.max(1, stageId - 10 - Math.floor(Math.random() * 10)) : stageId;
 
   // 問題タイプ決定: 算数特化
   let type;
