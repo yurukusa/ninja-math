@@ -655,6 +655,8 @@ function generateQuiz(stageId) {
       else if (effectiveStage <= 50) { do { a = 1+Math.floor(Math.random()*10); b = 1+Math.floor(Math.random()*9); } while(a+b>19); }
       else if (effectiveStage <= 80) { a = 10+Math.floor(Math.random()*21); b = 1+Math.floor(Math.random()*9); }
       else { a = 10+Math.floor(Math.random()*41); b = 10+Math.floor(Math.random()*40); if(a+b>99) b=99-a; }
+      // 50%でa,bを入れ替え（3+25のような順番も出る）
+      if (Math.random() < 0.5) { const tmp = a; a = b; b = tmp; }
       answer = a + b;
       question = `${a} + ${b} = ?`;
     }
