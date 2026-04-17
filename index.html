@@ -47,6 +47,22 @@ canvas { display:block; position:absolute; top:0; left:0; image-rendering:pixela
   position:absolute; top:60px; left:50%; transform:translateX(-50%);
   font-size:16px; color:#FFD700; font-weight:bold; pointer-events:none; z-index:5; display:none;
 }
+#ninja-hearts {
+  position:absolute; top:8px; left:16px; font-size:28px; pointer-events:none; z-index:5; display:none;
+  filter:drop-shadow(1px 1px 2px rgba(0,0,0,0.5));
+}
+#game-over-overlay {
+  position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7);
+  display:none; flex-direction:column; align-items:center; justify-content:center; z-index:20;
+}
+#game-over-overlay .go-text { font-size:42px; font-weight:bold; color:#FF5722; margin-bottom:10px; }
+#game-over-overlay .go-sub { font-size:20px; color:#FFF; margin-bottom:20px; }
+.retry-btn {
+  font-size:24px; font-weight:bold; min-width:200px; min-height:55px; border:none;
+  border-radius:14px; cursor:pointer; color:#FFF; background:#4CAF50; padding:10px 30px;
+  box-shadow:0 4px 8px rgba(0,0,0,0.3);
+}
+.retry-btn:active { transform:scale(0.95); }
 #chest-area {
   pointer-events:auto; display:none; flex-direction:row; align-items:center; justify-content:center;
   gap:30px; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:10;
@@ -69,9 +85,16 @@ canvas { display:block; position:absolute; top:0; left:0; image-rendering:pixela
 <body>
 <canvas id="c"></canvas>
 <div id="ui-overlay">
+  <div id="ninja-hearts">❤️❤️❤️</div>
   <div id="stage-info"></div>
   <div id="hp-bar-container"><div id="hp-bar"></div></div>
   <div id="combo-display"></div>
+  <div id="game-over-overlay">
+    <div class="go-text">やられた...！</div>
+    <div class="go-sub">もういちど ちょうせんしよう！</div>
+    <button class="retry-btn" onclick="retryStage()">もういちど！</button>
+    <button class="retry-btn" style="background:#666;margin-top:10px;font-size:18px" onclick="goToTitle()">タイトルへ</button>
+  </div>
   <div id="quiz-area">
     <div id="question-text"></div>
     <button class="answer-btn" id="btn0" onclick="onAnswer(0)"></button>
@@ -675,6 +698,9 @@ let screenFlash = 0;
 let ninjaX = DESIGN_W / 2, ninjaTargetX = 170;
 let enemyX = DESIGN_W + 100, enemyTargetX = 790;
 let comboCount = 0; // 連続正解カウント
+let ninjaHP = 3; // ハート3つ
+const NINJA_MAX_HP = 3;
+let enemyAttackProgress = 0; // 敵の反撃アニメーション
 
 // Chest
 let chestContents = []; // ['card','card','miss']
@@ -696,6 +722,37 @@ const hpBar = document.getElementById('hp-bar');
 const comboDisplay = document.getElementById('combo-display');
 const chestArea = document.getElementById('chest-area');
 const chestResult = document.getElementById('chest-result');
+const ninjaHeartsEl = document.getElementById('ninja-hearts');
+const gameOverOverlay = document.getElementById('game-over-overlay');
+
+function updateHearts() {
+  let h = '';
+  for (let i = 0; i < NINJA_MAX_HP; i++) h += i < ninjaHP ? '❤️' : '🖤';
+  ninjaHeartsEl.textContent = h;
+}
+
+function showGameOver() {
+  gamePhase = 'gameOver';
+  hideQuiz();
+  gameOverOverlay.style.display = 'flex';
+  stopBgm();
+  playTone(200, 0.4, 'square', 0.2);
+  setTimeout(() => playTone(150, 0.5, 'square', 0.15), 200);
+}
+
+function retryStage() {
+  gameOverOverlay.style.display = 'none';
+  startBattle(stageId);
+}
+
+function goToTitle() {
+  gameOverOverlay.style.display = 'none';
+  stageInfo.style.display = 'none';
+  hpBarContainer.style.display = 'none';
+  ninjaHeartsEl.style.display = 'none';
+  scene = 'title';
+  stopBgm();
+}
 
 function showQuiz() {
   if (!quizData) return;
@@ -737,6 +794,13 @@ function onAnswer(idx) {
     } else {
       attackType = 'sword';
     }
+    // 10%でハート回復（HP減ってる時のみ）
+    if (ninjaHP < NINJA_MAX_HP && Math.random() < 0.1) {
+      ninjaHP++;
+      updateHearts();
+      // 回復エフェクト
+      spawnStars(ninjaX, DESIGN_H * 0.4, 5);
+    }
   } else {
     // 不正解
     btns[idx].classList.add('wrong');
@@ -746,12 +810,10 @@ function onAnswer(idx) {
     quizAttempt++;
 
     if (quizAttempt >= 2) {
-      // 2回間違え: ダメージなし、敵が笑う
-      gamePhase = 'enemyLaugh';
-      phaseTimer = 50;
-      sfxEnemyLaugh();
-      papaHP = Math.min(papaMaxHP, papaHP + 1); // 敵HP+1回復
-      updateHPBar();
+      // 2回間違え: 敵が反撃→忍者ダメージ
+      gamePhase = 'enemyAttack';
+      phaseTimer = 0;
+      enemyAttackProgress = 0;
       hideQuiz();
     } else {
       // 1回目: ヒント
@@ -896,17 +958,22 @@ function startBattle(sid) {
   enemyX = DESIGN_W + 100;
   screenFlash = 0;
   shurikenAnim.active = false;
+  enemyAttackProgress = 0;
+  ninjaHP = NINJA_MAX_HP;
   particles.length = 0;
   scene = 'game';
 
   stageInfo.textContent = `ステージ ${stageId}`;
   stageInfo.style.display = 'block';
   hpBarContainer.style.display = 'block';
+  ninjaHeartsEl.style.display = 'block';
   updateHPBar();
+  updateHearts();
   comboDisplay.style.display = 'none';
   hideQuiz();
   hideChests();
   chestResult.style.display = 'none';
+  gameOverOverlay.style.display = 'none';
 }
 
 function updateGame() {
@@ -996,16 +1063,36 @@ function updateGame() {
         showQuiz();
       }
     }
-  } else if (gamePhase === 'enemyLaugh') {
-    if (phaseTimer >= 50) {
-      // 次の問題
-      gamePhase = 'quiz';
-      quizAttempt = 0;
-      phaseTimer = 0;
-      selectedAnswer = -1;
-      generateQuiz(stageId);
-      showQuiz();
+  } else if (gamePhase === 'enemyAttack') {
+    // 敵の反撃アニメーション
+    enemyAttackProgress += 0.04;
+
+    if (enemyAttackProgress >= 0.5 && enemyAttackProgress < 0.55) {
+      // 忍者にヒット
+      sfxImpact();
+      triggerShake(8, 15);
+      spawnSparks(ninjaX + 20, DESIGN_H * 0.45, 12);
+      screenFlash = 0.5;
+      ninjaHP--;
+      updateHearts();
+    }
+
+    if (enemyAttackProgress >= 1) {
+      enemyAttackProgress = 0;
       comboDisplay.style.display = 'none';
+
+      if (ninjaHP <= 0) {
+        // ゲームオーバー
+        showGameOver();
+      } else {
+        // 次の問題
+        gamePhase = 'quiz';
+        quizAttempt = 0;
+        phaseTimer = 0;
+        selectedAnswer = -1;
+        generateQuiz(stageId);
+        showQuiz();
+      }
     }
   } else if (gamePhase === 'stageClear') {
     if (phaseTimer === 1) {
@@ -1062,7 +1149,12 @@ function drawGame() {
   if (gamePhase === 'attack' && attackType === 'sword') ninjaState = 'sword';
   else if (gamePhase === 'attack' && attackType === 'shuriken') ninjaState = 'shuriken';
   else if (gamePhase === 'stageClear') ninjaState = 'victory';
+  // 敵反撃で被弾中は忍者が点滅
+  if (gamePhase === 'enemyAttack' && enemyAttackProgress > 0.45) {
+    ctx.globalAlpha = 0.4 + Math.sin(timer * 0.5) * 0.4;
+  }
   drawNinja(ninjaX, DESIGN_H * 0.55, 70, ninjaState, BELTS[saveData.beltRank].color);
+  ctx.globalAlpha = 1;
 
   // 斬撃エフェクト
   if (gamePhase === 'attack' && attackType === 'sword') {
@@ -1078,7 +1170,7 @@ function drawGame() {
   if (gamePhase !== 'intro' || phaseTimer > 0) {
     let eState = 'idle';
     if (gamePhase === 'attack' && attackProgress > 0.55) eState = 'hit';
-    else if (gamePhase === 'enemyLaugh') eState = 'laugh';
+    else if (gamePhase === 'enemyAttack') eState = 'laugh'; // 敵がattackモーション
     else if (gamePhase === 'stageClear') eState = 'defeated';
     if (enemyX < DESIGN_W) {
       drawEnemy(enemyX, DESIGN_H * 0.55, 75, eState);
