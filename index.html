@@ -168,19 +168,32 @@ function sfxBeltUp() { [523, 659, 784, 1047, 1319].forEach((f, i) => setTimeout(
 // ============================================================
 const SAVE_KEY = 'ninja_math_v1';
 const defaultSave = () => ({
-  version: 1,
+  version: 2,
   clearedStages: [],
-  beltRank: 0, // 0=white,1=yellow,2=green,3=blue,4=red,5=black
-  cards: [], // collected card IDs
-  settings: { questionMode: 'mixed', sound: true },
-  stats: { totalQuestions: 0, totalCorrect: 0, streak: 0 }
+  beltRank: 0,
+  cards: [],
+  settings: { questionMode: 'mixed', sound: true, bgmVolume: 0.5 },
+  stats: { totalQuestions: 0, totalCorrect: 0, streak: 0, maxStreak: 0 }
 });
 let saveData = defaultSave();
 
 function loadGame() {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
-    if (raw) { const d = JSON.parse(raw); if (d.version === 1) { saveData = d; soundEnabled = d.settings.sound; } }
+    if (!raw) return;
+    const d = JSON.parse(raw);
+    if (d.version === 1) {
+      // v1→v2マイグレーション
+      d.version = 2;
+      d.stats.maxStreak = d.stats.maxStreak || 0;
+      d.settings.bgmVolume = 0.5;
+      saveData = d;
+      soundEnabled = d.settings.sound;
+      saveGame();
+    } else if (d.version === 2) {
+      saveData = d;
+      soundEnabled = d.settings.sound;
+    }
   } catch (e) {}
 }
 function saveGame() {
@@ -227,7 +240,15 @@ const WORLDS = [
 const STAGES_PER_WORLD = 20;
 const STAGES = [];
 for (let i = 1; i <= 140; i++) {
-  STAGES.push({ id: i, hitsNeeded: 2, level: Math.min(3, Math.ceil(i / 20)) });
+  // HP段階的増加 + ボスステージ(各ワールド最終)はHP+3
+  let hp;
+  if (i <= 30) hp = 5;
+  else if (i <= 60) hp = 6;
+  else if (i <= 90) hp = 7;
+  else hp = 8;
+  const isBoss = i % STAGES_PER_WORLD === 0;
+  if (isBoss) hp += 3;
+  STAGES.push({ id: i, hitsNeeded: hp, level: Math.min(3, Math.ceil(i / 20)), isBoss });
 }
 
 // ============================================================
@@ -693,7 +714,8 @@ function hideChests() { chestArea.style.display = 'none'; }
 
 function updateHPBar() {
   hpBar.style.width = (papaHP / papaMaxHP * 100) + '%';
-  hpBar.style.background = papaHP <= 1 ? '#FF9800' : '#F44336';
+  const hpRatio = papaHP / papaMaxHP;
+  hpBar.style.background = hpRatio <= 0.25 ? '#FF9800' : hpRatio <= 0.5 ? '#FF5722' : '#F44336';
 }
 
 function onAnswer(idx) {
@@ -728,7 +750,7 @@ function onAnswer(idx) {
       gamePhase = 'enemyLaugh';
       phaseTimer = 50;
       sfxEnemyLaugh();
-      papaHP = Math.min(papaMaxHP, papaHP + 0.5); // 少し回復
+      papaHP = Math.min(papaMaxHP, papaHP + 1); // 敵HP+1回復
       updateHPBar();
       hideQuiz();
     } else {
@@ -936,11 +958,12 @@ function updateGame() {
 
     if (attackProgress >= 0.6 && attackProgress < 0.65) {
       // ヒットの瞬間
+      const damage = attackType === 'shuriken' ? 2 : 1;
       sfxImpact();
-      triggerShake(6, 12);
-      spawnSparks(enemyX - 20, DESIGN_H * 0.45, 15);
-      screenFlash = 0.6;
-      papaHP = Math.max(0, papaHP - 1);
+      triggerShake(attackType === 'shuriken' ? 10 : 6, attackType === 'shuriken' ? 18 : 12);
+      spawnSparks(enemyX - 20, DESIGN_H * 0.45, attackType === 'shuriken' ? 30 : 15);
+      screenFlash = attackType === 'shuriken' ? 0.8 : 0.6;
+      papaHP = Math.max(0, papaHP - damage);
       updateHPBar();
     }
 
