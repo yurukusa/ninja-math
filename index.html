@@ -615,31 +615,94 @@ function generateQuiz(stageId) {
   let a, b, answer, question;
 
   if (type === 'add') {
-    if (effectiveStage <= 5) { a = 1 + Math.floor(Math.random() * 3); b = 1 + Math.floor(Math.random() * 3); }
-    else if (effectiveStage <= 10) { do { a = 1+Math.floor(Math.random()*5); b = 1+Math.floor(Math.random()*5); } while(a+b>8); }
-    else if (effectiveStage <= 20) { do { a = 1+Math.floor(Math.random()*7); b = 1+Math.floor(Math.random()*7); } while(a+b>10); }
-    else if (effectiveStage <= 30) { do { a = 1+Math.floor(Math.random()*9); b = 1+Math.floor(Math.random()*5); } while(a+b>14); }
-    else if (effectiveStage <= 50) { do { a = 1+Math.floor(Math.random()*10); b = 1+Math.floor(Math.random()*9); } while(a+b>19); }
-    else if (effectiveStage <= 80) { a = 10+Math.floor(Math.random()*21); b = 1+Math.floor(Math.random()*9); }
-    else { a = 10+Math.floor(Math.random()*41); b = 10+Math.floor(Math.random()*40); if(a+b>99) b=99-a; }
-    answer = a + b;
-    question = `${a} + ${b} = ?`;
+    // S20以降: 30%で3項演算（a+b+c や a+b-c）
+    if (effectiveStage >= 20 && Math.random() < 0.3) {
+      // 3項演算: 答えの範囲は2項と同じ基準
+      let maxAns;
+      if (effectiveStage <= 30) maxAns = 14;
+      else if (effectiveStage <= 50) maxAns = 19;
+      else if (effectiveStage <= 80) maxAns = 39;
+      else maxAns = 60;
+
+      // S40以降は足し引き混合もあり
+      const useMixed = effectiveStage >= 40 && Math.random() < 0.5;
+
+      if (useMixed) {
+        // a + b - c 形式（答えが正になるように）
+        do {
+          a = 2 + Math.floor(Math.random() * Math.min(15, maxAns * 0.6));
+          b = 1 + Math.floor(Math.random() * Math.min(10, maxAns * 0.4));
+          var c = 1 + Math.floor(Math.random() * Math.min(b, a + b - 1));
+        } while (a + b - c > maxAns || a + b - c < 0);
+        answer = a + b - c;
+        question = `${a} + ${b} − ${c} = ?`;
+      } else {
+        // a + b + c 形式
+        do {
+          a = 1 + Math.floor(Math.random() * Math.min(10, maxAns * 0.4));
+          b = 1 + Math.floor(Math.random() * Math.min(8, maxAns * 0.3));
+          var c = 1 + Math.floor(Math.random() * Math.min(6, maxAns * 0.3));
+        } while (a + b + c > maxAns);
+        answer = a + b + c;
+        question = `${a} + ${b} + ${c} = ?`;
+      }
+    } else {
+      // 通常の2項足し算
+      if (effectiveStage <= 5) { a = 1 + Math.floor(Math.random() * 3); b = 1 + Math.floor(Math.random() * 3); }
+      else if (effectiveStage <= 10) { do { a = 1+Math.floor(Math.random()*5); b = 1+Math.floor(Math.random()*5); } while(a+b>8); }
+      else if (effectiveStage <= 20) { do { a = 1+Math.floor(Math.random()*7); b = 1+Math.floor(Math.random()*7); } while(a+b>10); }
+      else if (effectiveStage <= 30) { do { a = 1+Math.floor(Math.random()*9); b = 1+Math.floor(Math.random()*5); } while(a+b>14); }
+      else if (effectiveStage <= 50) { do { a = 1+Math.floor(Math.random()*10); b = 1+Math.floor(Math.random()*9); } while(a+b>19); }
+      else if (effectiveStage <= 80) { a = 10+Math.floor(Math.random()*21); b = 1+Math.floor(Math.random()*9); }
+      else { a = 10+Math.floor(Math.random()*41); b = 10+Math.floor(Math.random()*40); if(a+b>99) b=99-a; }
+      answer = a + b;
+      question = `${a} + ${b} = ?`;
+    }
   } else if (type === 'subtract') {
     const subLevel = Math.max(0, stageId - 30);
-    if (subLevel <= 10) { a = 3+Math.floor(Math.random()*4); b = 1+Math.floor(Math.random()*Math.min(2,a-1)); }
-    else if (subLevel <= 25) { a = 4+Math.floor(Math.random()*5); b = 1+Math.floor(Math.random()*Math.min(4,a-1)); }
-    else if (subLevel <= 40) { a = 5+Math.floor(Math.random()*6); b = 1+Math.floor(Math.random()*Math.min(6,a-1)); }
-    else if (subLevel <= 55) { a = 10+Math.floor(Math.random()*9); b = 1+Math.floor(Math.random()*Math.min(9,a-1)); }
-    else if (subLevel <= 80) {
-      // 二桁−一桁: 20〜40 − 1〜9
-      a = 20+Math.floor(Math.random()*21); b = 1+Math.floor(Math.random()*9);
+
+    // S50以降: 30%で3項演算（a - b + c 形式）
+    if (subLevel >= 20 && Math.random() < 0.3) {
+      let maxAns;
+      if (subLevel <= 40) maxAns = 10;
+      else if (subLevel <= 60) maxAns = 15;
+      else maxAns = 25;
+
+      const subPattern = Math.random();
+      if (subPattern < 0.5) {
+        // a - b + c
+        do {
+          a = 4 + Math.floor(Math.random() * Math.min(12, maxAns));
+          b = 1 + Math.floor(Math.random() * Math.min(a - 1, 8));
+          var c = 1 + Math.floor(Math.random() * Math.min(6, maxAns));
+        } while (a - b + c > maxAns || a - b + c < 0 || a - b < 0);
+        answer = a - b + c;
+        question = `${a} − ${b} + ${c} = ?`;
+      } else {
+        // a - b - c
+        do {
+          a = 5 + Math.floor(Math.random() * Math.min(15, maxAns));
+          b = 1 + Math.floor(Math.random() * Math.min(a - 2, 7));
+          var c = 1 + Math.floor(Math.random() * Math.min(a - b - 1, 5));
+        } while (a - b - c < 0 || a - b - c > maxAns);
+        answer = a - b - c;
+        question = `${a} − ${b} − ${c} = ?`;
+      }
     } else {
-      // 二桁−二桁: 30〜60 − 10〜29
-      a = 30+Math.floor(Math.random()*31); b = 10+Math.floor(Math.random()*20);
-      if (b >= a) b = a - 1;
+      // 通常の2項引き算
+      if (subLevel <= 10) { a = 3+Math.floor(Math.random()*4); b = 1+Math.floor(Math.random()*Math.min(2,a-1)); }
+      else if (subLevel <= 25) { a = 4+Math.floor(Math.random()*5); b = 1+Math.floor(Math.random()*Math.min(4,a-1)); }
+      else if (subLevel <= 40) { a = 5+Math.floor(Math.random()*6); b = 1+Math.floor(Math.random()*Math.min(6,a-1)); }
+      else if (subLevel <= 55) { a = 10+Math.floor(Math.random()*9); b = 1+Math.floor(Math.random()*Math.min(9,a-1)); }
+      else if (subLevel <= 80) {
+        a = 20+Math.floor(Math.random()*21); b = 1+Math.floor(Math.random()*9);
+      } else {
+        a = 30+Math.floor(Math.random()*31); b = 10+Math.floor(Math.random()*20);
+        if (b >= a) b = a - 1;
+      }
+      answer = a - b;
+      question = `${a} − ${b} = ?`;
     }
-    answer = a - b;
-    question = `${a} − ${b} = ?`;
   } else if (type === 'multiply') {
     const mulLevel = Math.max(0, stageId - 60);
     let maxA, maxB;
