@@ -729,6 +729,24 @@ function generateQuiz(stageId) {
     question = `${a} ÷ ${b} = ?`;
   }
 
+  // S15以降: 20%で穴埋め形式に変換（2項演算のみ）
+  if (stageId >= 15 && Math.random() < 0.2) {
+    const m = question.match(/^(\d+) ([+−×÷]) (\d+) = \?$/);
+    if (m) {
+      const n1 = parseInt(m[1]), op = m[2], n2 = parseInt(m[3]);
+      const result = answer;
+      if (Math.random() < 0.5) {
+        // 左を穴に: ? ○ b = result
+        answer = n1;
+        question = `? ${op} ${n2} = ${result}`;
+      } else {
+        // 右を穴に: a ○ ? = result
+        answer = n2;
+        question = `${n1} ${op} ? = ${result}`;
+      }
+    }
+  }
+
   const choices = [answer];
   while (choices.length < 3) {
     const off = (Math.random() < 0.5 ? 1 : -1) * (1 + Math.floor(Math.random() * (answer > 19 ? 5 : 3)));
@@ -1392,6 +1410,8 @@ function drawCollection() {
 // ============================================================
 function gameLoop() {
   timer++;
+  // transformをリセットしてからクリア（シェイクのtranslate蓄積防止）
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
   ctx.clearRect(0, 0, DESIGN_W, DESIGN_H);
 
   switch (scene) {
