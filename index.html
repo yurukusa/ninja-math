@@ -31,6 +31,21 @@ canvas { display:block; position:absolute; top:0; left:0; image-rendering:pixela
 .answer-btn.correct { background:#4CAF50 !important; animation:pulse 0.3s; }
 .answer-btn.wrong { background:#F44336 !important; }
 @keyframes pulse { 0%{transform:scale(1)} 50%{transform:scale(1.08)} 100%{transform:scale(1)} }
+@keyframes cardAppear {
+  0% { transform:translate(-50%,-50%) scale(0) rotate(-180deg); opacity:0; }
+  50% { transform:translate(-50%,-50%) scale(1.2) rotate(10deg); opacity:1; }
+  70% { transform:translate(-50%,-50%) scale(0.95) rotate(-3deg); }
+  100% { transform:translate(-50%,-50%) scale(1) rotate(0deg); opacity:1; }
+}
+@keyframes cardShine {
+  0% { box-shadow:0 0 20px rgba(255,215,0,0.3); }
+  50% { box-shadow:0 0 40px rgba(255,215,0,0.8), 0 0 80px rgba(255,215,0,0.3); }
+  100% { box-shadow:0 0 20px rgba(255,215,0,0.3); }
+}
+@keyframes sparkleFloat {
+  0% { opacity:1; transform:translateY(0) scale(1); }
+  100% { opacity:0; transform:translateY(-40px) scale(0.5); }
+}
 #btn0 { background:#E91E63; } #btn1 { background:#2196F3; } #btn2 { background:#FF9800; }
 #stage-info {
   position:absolute; top:8px; left:50%; transform:translateX(-50%);
@@ -256,6 +271,13 @@ function sfxWrong() { playSfx('wrong') || playTone(150, 0.3, 'square', 0.12); }
 function sfxEnemyLaugh() { [400, 350, 300].forEach((f, i) => setTimeout(() => playTone(f, 0.12, 'triangle', 0.15), i * 100)); }
 function sfxStageClear() { playSfx('victory') || [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => playTone(f, 0.3, 'triangle', 0.25), i * 150)); }
 function sfxChestOpen() { playSfx('chest-open') || playTone(660, 0.15, 'triangle'); }
+function sfxCardGet() {
+  // ゴージャスなファンファーレ（和音+上昇音階）
+  [523, 659, 784].forEach((f, i) => setTimeout(() => playTone(f, 0.25, 'triangle', 0.2), i * 80));
+  setTimeout(() => {
+    [784, 988, 1175, 1319].forEach((f, i) => setTimeout(() => playTone(f, 0.35, 'sine', 0.2), i * 100));
+  }, 300);
+}
 function sfxChestMiss() { playTone(200, 0.2, 'square', 0.15); playTone(150, 0.25, 'square', 0.1); }
 function sfxButton() { playSfx('button') || playTone(440, 0.08, 'triangle', 0.15); }
 function sfxBeltUp() { [523, 659, 784, 1047, 1319].forEach((f, i) => setTimeout(() => playTone(f, 0.35, 'triangle', 0.2), i * 120)); }
@@ -922,25 +944,46 @@ function onChest(idx) {
   const content = chestContents[idx];
   if (content === 'miss') {
     sfxChestMiss();
-    spawnSmoke(DESIGN_W / 2, DESIGN_H / 2, 15);
-    chestResult.innerHTML = '💨 はずれ！<br><span style="font-size:18px">つぎは あたるかも！</span>';
+    spawnSmoke(DESIGN_W / 2, DESIGN_H / 2, 25);
+    chestResult.innerHTML = '<div style="animation:cardAppear 0.4s ease-out;font-size:48px">💨</div><div style="font-size:24px;margin-top:8px">はずれ！</div><div style="font-size:16px;color:#aaa;margin-top:4px">つぎは あたるかも！</div>';
   } else {
-    sfxChestOpen();
-    spawnStars(DESIGN_W / 2, DESIGN_H / 2, 30);
-    // 未所持カード優先、全所持ならランダム
+    sfxCardGet();
+    // 大量パーティクル（中央＋四隅）
+    spawnStars(DESIGN_W / 2, DESIGN_H / 2, 50);
+    spawnSparks(DESIGN_W / 2, DESIGN_H / 2, 20);
+    spawnStars(100, 100, 8);
+    spawnStars(DESIGN_W - 100, 100, 8);
+    spawnStars(100, DESIGN_H - 100, 8);
+    spawnStars(DESIGN_W - 100, DESIGN_H - 100, 8);
+    screenFlash = 0.7;
+
+    // 未所持カード優先
     let cardIdx;
     const unowned = [];
     for (let i = 0; i < NINJA_CARDS.length; i++) { if (!saveData.cards.includes(i)) unowned.push(i); }
-    cardIdx = unowned.length > 0 ? unowned[Math.floor(Math.random() * unowned.length)] : Math.floor(Math.random() * NINJA_CARDS.length);
+    const isNew = unowned.length > 0;
+    cardIdx = isNew ? unowned[Math.floor(Math.random() * unowned.length)] : Math.floor(Math.random() * NINJA_CARDS.length);
     chestCardName = NINJA_CARDS[cardIdx];
     if (!saveData.cards.includes(cardIdx)) saveData.cards.push(cardIdx);
     const cardImgKey = `card${String(cardIdx + 1).padStart(2, '0')}`;
     const cardImg = SPRITES[cardImgKey];
-    const imgHtml = (cardImg && cardImg.complete) ? `<img src="${cardImg.src}" style="width:64px;height:64px;image-rendering:pixelated;display:block;margin:8px auto;">` : '';
-    chestResult.innerHTML = `<div style="background:${CARD_COLORS[cardIdx]};border:3px solid #FFD700;border-radius:12px;padding:12px 20px;display:inline-block">
+    const imgHtml = (cardImg && cardImg.complete)
+      ? `<img src="${cardImg.src}" style="width:80px;height:80px;image-rendering:pixelated;display:block;margin:10px auto;filter:drop-shadow(0 0 8px rgba(255,215,0,0.8));">`
+      : '';
+    const newBadge = isNew ? '<div style="color:#FF5722;font-size:18px;font-weight:bold;margin-bottom:4px">🆕 NEW!</div>' : '';
+    chestResult.innerHTML = `<div style="
+      background:linear-gradient(135deg, ${CARD_COLORS[cardIdx]}, ${CARD_COLORS[cardIdx]}dd);
+      border:4px solid #FFD700; border-radius:16px; padding:16px 28px;
+      display:inline-block; text-align:center;
+      animation: cardAppear 0.6s ease-out, cardShine 1.5s ease-in-out infinite 0.6s;
+    ">
+      ${newBadge}
       ${imgHtml}
-      <div style="color:#FFF;font-size:22px;font-weight:bold;margin-top:4px">✨ ${chestCardName} ✨</div>
-      <div style="color:#FFD700;font-size:14px">にんじゃカード ゲット！</div>
+      <div style="color:#FFF;font-size:26px;font-weight:bold;margin-top:6px;text-shadow:2px 2px 4px rgba(0,0,0,0.5)">
+        ✨ ${chestCardName} ✨
+      </div>
+      <div style="color:#FFD700;font-size:15px;margin-top:4px">にんじゃカード ゲット！</div>
+      <div style="color:rgba(255,255,255,0.6);font-size:12px;margin-top:6px">${saveData.cards.length} / ${NINJA_CARDS.length} しゅうしゅう</div>
     </div>`;
   }
   chestResult.style.display = 'block';
