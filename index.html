@@ -833,7 +833,7 @@ function goToTitle() {
   stageInfo.style.display = 'none';
   hpBarContainer.style.display = 'none';
   ninjaHeartsEl.style.display = 'none';
-  scene = 'title';
+  scene = 'stageMap';
   stopBgm();
 }
 
@@ -955,9 +955,9 @@ function updateTitle() {
   if (inputTapped) {
     if (hitRect(inputX, inputY, DESIGN_W / 2 - 120, DESIGN_H * 0.6, 240, 60)) {
       sfxButton();
-      stopBgm();
-      const nextStage = (saveData.clearedStages.length || 0) + 1;
-      startBattle(Math.min(nextStage, STAGES.length));
+      scene = 'stageMap';
+      mapScrollTarget = Math.max(0, (saveData.clearedStages.length) * MAP_NODE_SPACING - DESIGN_W / 2);
+      mapScroll = mapScrollTarget;
     } else if (hitRect(inputX, inputY, DESIGN_W / 2 - 120, DESIGN_H * 0.7 + 10, 240, 50)) {
       sfxButton();
       scene = 'collection';
@@ -1020,6 +1020,173 @@ function drawTitle() {
   ctx.textAlign = 'right';
   ctx.fillText(BELTS[saveData.beltRank].name, DESIGN_W - 20, 30);
   ctx.textAlign = 'center';
+}
+
+// ============================================================
+// 10.5 Stage Map
+// ============================================================
+const MAP_NODE_SPACING = 120; // ノード間の横距離
+let mapScroll = 0, mapScrollTarget = 0;
+let mapNinjaX = 0; // 忍者のマップ上の表示X
+
+// マップ上のステージノード位置（蛇行する道）
+function getNodePos(idx) {
+  const x = 80 + idx * MAP_NODE_SPACING;
+  const wave = Math.sin(idx * 0.4) * 60;
+  const y = DESIGN_H * 0.5 + wave;
+  return { x, y };
+}
+
+function updateStageMap() {
+  const nextStage = Math.min((saveData.clearedStages.length || 0) + 1, STAGES.length);
+  const ninjaNodePos = getNodePos(nextStage - 1);
+
+  // スクロール（忍者が画面中央付近にいるように）
+  mapScrollTarget = Math.max(0, ninjaNodePos.x - DESIGN_W * 0.4);
+  mapScroll += (mapScrollTarget - mapScroll) * 0.08;
+
+  // 忍者位置をスムーズに更新
+  mapNinjaX += (ninjaNodePos.x - mapNinjaX) * 0.1;
+
+  if (inputTapped) {
+    // ステージノードをタップ判定
+    for (let i = 0; i < Math.min(STAGES.length, nextStage); i++) {
+      const pos = getNodePos(i);
+      const sx = pos.x - mapScroll;
+      const sy = pos.y;
+      if (Math.hypot(inputX - sx, inputY - sy) < 28) {
+        sfxButton();
+        stopBgm();
+        startBattle(i + 1);
+        return;
+      }
+    }
+    // 戻るボタン
+    if (hitRect(inputX, inputY, 10, DESIGN_H - 50, 100, 40)) {
+      sfxButton();
+      scene = 'title';
+    }
+  }
+}
+
+function drawStageMap() {
+  // 背景
+  const worldIdx = Math.min(WORLDS.length - 1, Math.floor(mapScroll / (MAP_NODE_SPACING * STAGES_PER_WORLD)));
+  drawBackground(worldIdx);
+
+  ctx.save();
+  ctx.translate(-mapScroll, 0);
+
+  const nextStage = Math.min((saveData.clearedStages.length || 0) + 1, STAGES.length);
+
+  // 道を描画（ノード間の線）
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.lineWidth = 4;
+  ctx.setLineDash([8, 6]);
+  ctx.beginPath();
+  for (let i = 0; i < STAGES.length; i++) {
+    const pos = getNodePos(i);
+    if (i === 0) ctx.moveTo(pos.x, pos.y);
+    else ctx.lineTo(pos.x, pos.y);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // ステージノード描画
+  for (let i = 0; i < STAGES.length; i++) {
+    const pos = getNodePos(i);
+    const cleared = saveData.clearedStages.includes(i + 1);
+    const isNext = i + 1 === nextStage;
+    const locked = i + 1 > nextStage;
+    const isBoss = STAGES[i].isBoss;
+
+    // ワールド区切り線
+    if (i > 0 && i % STAGES_PER_WORLD === 0) {
+      const wx = pos.x - MAP_NODE_SPACING / 2;
+      ctx.strokeStyle = 'rgba(255,215,0,0.4)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(wx, 50); ctx.lineTo(wx, DESIGN_H - 50); ctx.stroke();
+      ctx.fillStyle = '#FFD700'; ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center';
+      const wIdx = Math.floor(i / STAGES_PER_WORLD);
+      ctx.fillText(WORLDS[wIdx] ? WORLDS[wIdx].name : '', wx, 40);
+    }
+
+    // ノード
+    const nodeSize = isBoss ? 22 : 16;
+    if (locked) {
+      ctx.fillStyle = '#555';
+      ctx.globalAlpha = 0.4;
+    } else if (cleared) {
+      ctx.fillStyle = isBoss ? '#FF9800' : '#4CAF50';
+      ctx.globalAlpha = 1;
+    } else {
+      // 次のステージ（点滅）
+      ctx.fillStyle = '#FFD700';
+      ctx.globalAlpha = 0.6 + Math.sin(timer * 0.1) * 0.4;
+    }
+
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, nodeSize, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 枠
+    ctx.strokeStyle = locked ? '#444' : '#FFF';
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = locked ? 0.3 : 1;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // ステージ番号
+    if (!locked) {
+      ctx.fillStyle = '#FFF';
+      ctx.font = `bold ${isBoss ? 14 : 11}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText(String(i + 1), pos.x, pos.y + (isBoss ? 5 : 4));
+    }
+
+    // クリア済みチェック
+    if (cleared) {
+      ctx.fillStyle = '#FFF';
+      ctx.font = '12px sans-serif';
+      ctx.fillText('✓', pos.x, pos.y - nodeSize - 4);
+    }
+
+    // ボスマーク
+    if (isBoss && !locked) {
+      ctx.fillStyle = '#FF5722';
+      ctx.font = 'bold 10px sans-serif';
+      ctx.fillText('BOSS', pos.x, pos.y + nodeSize + 14);
+    }
+  }
+
+  // 忍者キャラ（マップ上）
+  const ninjaMapY = getNodePos(nextStage - 1).y;
+  drawNinja(mapNinjaX, ninjaMapY - 20, 35, 'idle', BELTS[saveData.beltRank].color);
+
+  ctx.restore();
+
+  // UI（固定位置）
+  // ワールド名
+  const curWorld = WORLDS[Math.min(WORLDS.length - 1, Math.floor((nextStage - 1) / STAGES_PER_WORLD))];
+  ctx.fillStyle = '#FFF';
+  ctx.font = 'bold 22px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(`${curWorld ? curWorld.name : ''} — ステージ ${nextStage}`, DESIGN_W / 2, 30);
+
+  // 帯ランク
+  ctx.fillStyle = BELTS[saveData.beltRank].color;
+  ctx.font = 'bold 14px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText(BELTS[saveData.beltRank].name, DESIGN_W - 15, 25);
+
+  // 戻るボタン
+  ctx.fillStyle = 'rgba(100,100,100,0.7)';
+  drawRoundRect(10, DESIGN_H - 50, 100, 40, 8);
+  ctx.fill();
+  ctx.fillStyle = '#FFF';
+  ctx.font = 'bold 16px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('もどる', 60, DESIGN_H - 25);
 }
 
 // ============================================================
@@ -1207,14 +1374,12 @@ function updateGame() {
       }
       saveGame();
 
-      // 次のステージへ or タイトルへ
+      // ステージマップに戻る
       stageInfo.style.display = 'none';
       hpBarContainer.style.display = 'none';
-      if (stageId < STAGES.length) {
-        startBattle(stageId + 1);
-      } else {
-        scene = 'title';
-      }
+      ninjaHeartsEl.style.display = 'none';
+      scene = 'stageMap';
+      stopBgm();
     }
   }
 
@@ -1416,6 +1581,7 @@ function gameLoop() {
 
   switch (scene) {
     case 'title': updateTitle(); drawTitle(); break;
+    case 'stageMap': updateStageMap(); drawStageMap(); break;
     case 'game': updateGame(); drawGame(); break;
     case 'collection': updateCollection(); drawCollection(); break;
   }
